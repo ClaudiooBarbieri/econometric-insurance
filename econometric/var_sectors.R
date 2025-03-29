@@ -8,10 +8,13 @@ library(ggplot2)
 library(vars)
 library(tidyr)
 library(tseries)
+library(dynlm)
+
 
 ### Load the data ###
 load("lists_of_datasets.RData")
 
+# IF go further back, memory pbs with VAR
 starting_date <- "2021-01-01"
 
 # Filter & select 'timestamp' and 'close'
@@ -128,6 +131,24 @@ par(mfrow = c(1, 1))
 ### Cointegration analysis ###
 # Let us see if a cointegration relationship exists in the secotr indices
 
+# In this setting we reset the starting date (in order to have more lags)
+starting_date <- "2020-01-01"
+
+# Filter & select 'timestamp' and 'close'
+filter_by_timestamp <- function(df) {
+  df %>% 
+    filter(timestamp >= starting_date) %>%
+    select(timestamp, close)              
+}
+
+filtered_list <- lapply(list_indeces, filter_by_timestamp)
+
+# Merge into one dataframe by timestamp
+indeces <- reduce(filtered_list, full_join, by = "timestamp")
+names(indeces) <- c("timestamp", names(list_indeces))
+
+indeces$NIFTY500 <- NULL
+
 sector_vars <- c("NIFTYAUTO",
                  "NIFTYBANK",
                  "NIFTYCOMMODITIES",
@@ -181,12 +202,35 @@ sector_data_numeric <- df_sectors %>% select(-timestamp)
 lag_selection <- VARselect(sector_data_numeric, lag.max = 20, type = "const")
 lag_selection$selection
 
-# They are all consistent. 1 lag is the best choice
+# Select the lag
 p_bic <- lag_selection$selection["SC(n)"]
 
-# FAIL
-coint_test <- ca.jo(sector_data_numeric, type = "trace", ecdet = "const", K = 2)
+# FAIL if considering a constant term. We proceed by being parsimonious and neglecting
+# this term. FAIL if num_lags < 2
+coint_test <- ca.jo(sector_data_numeric, type = "trace", ecdet = "none", K = 2)
 summary(coint_test)
 
+# Comments
+# - With confidence 95% we can state there is exactly one cointegrarion
+#   relationship
+# - The cointegration relationship: 
+#   NIFTYAUTO.l2+0.1163NIFTYBANK.l2−4.2464NIFTYCOMMODITIES.l2+0.0199NIFTYFINSERVICE.l2+0.0443NIFTYENERGY.l2=0
+# - Negative speed of  adjustment in the corresponding loading matrix: the variables
+#   adjust to restore the long-run equilibrium
 
+beta <- coint_test@V[, 1]
+beta_normalized <- beta / beta[1] # not nec
+cat("Normalized cointegrating vector:\n")
+print(beta_normalized)
+
+ECT <- as.matrix(sector_data_numeric) %*% beta_normalized
+plot.new()
+par(mfrow = c(1,1))
+plot(ts(ECT), type = 'l', xlab = "Time", ylab = "ECT", 
+     main = "Error Correction Term (Cointegration Relationship)")
+abline(h = 0, col = "red", lty = 2)
+
+# Non funzia :(
+vec_model_auto <- dynlm(diff(NIFTYAUTO) ~ lag(ECT, 1), data = df_sectors)
+summary(vec_model_auto)
 
