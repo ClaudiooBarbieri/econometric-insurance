@@ -234,3 +234,7 @@ abline(h = 0, col = "red", lty = 2)
 vec_model_auto <- dynlm(diff(NIFTYAUTO) ~ lag(ECT, 1), data = df_sectors)
 summary(vec_model_auto)
 
+# Provare sto error-correction per una qualche trading strategy?
+
+
+
