@@ -9,7 +9,7 @@ library(purrr)
 load("lists_of_datasets.RData")
 
 # keep only data from starting_date on
-starting_date <- "2019-01-01"
+starting_date <- "2021-01-01"
 
 filter_by_timestamp <- function(df) {
   df %>% 
@@ -30,7 +30,7 @@ returns <- indeces %>%
   filter(minute(timestamp) %% minute == 0) %>%
   mutate(across(
     -timestamp,
-    ~ log(./lag(.)),
+    ~ asinh(./lag(.)),
     .names = "log_ret_{.col}" 
   )) %>%
   select(timestamp, starts_with("log_ret_"))
