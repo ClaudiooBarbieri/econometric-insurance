@@ -536,7 +536,7 @@ for (var in names(test_set_log)[-1]) {
   plot(timestamp, actual, type = "o", col = "blue", lwd = 2, pch = 16,
        ylim = y_range, xlab = "Timestamp", ylab = "Log Return", main = var)
   lines(timestamp, forecasted, type = "o", col = "red", lwd = 2, pch = 17)
-  legend("topright", legend = c("Actual", "Forecast"),
+  legend("topright", legend = c("Actual", "Prediction"),
          col = c("blue", "red"), lty = 1, pch = c(16, 17), cex = 0.8)
 }
 par(mfrow = c(1, 1))
