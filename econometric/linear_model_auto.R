@@ -11,6 +11,7 @@ library(TTR)
 library(xts)
 library(IDPmisc)
 library(DescTools)
+library(MASS)
 
 # load image with the lists of dataframes
 load("lists_of_datasets.RData")
@@ -36,7 +37,7 @@ name <- names(auto_data)
 
 # select only 2018
 start <- "2018-01-01"
-end <- "2019-01-01"
+end <- "2020-01-01"
 select_period <- function(df, start, end){
   
   df$Datetime <- as.POSIXct(df$timestamp, format="%Y-%m-%d %H:%M:%S", tz="Asia/Kolkata")
@@ -44,6 +45,7 @@ select_period <- function(df, start, end){
   # Extract Date and Time
   df$Date <- as.Date(df$Datetime, tz="Asia/Kolkata")
   df$Time <- format(df$Datetime, format="%H:%M:%S")
+  df$hour <- format(df$Datetime, format="%H")
   
   # Filter Only Market Hours (9:15 AM - 3:30 PM)
   df <- df %>%
@@ -51,7 +53,24 @@ select_period <- function(df, start, end){
     filter(Date >= start & Date < end)
 }
 
-auto_data_filtered <- lapply(auto_data, select_period, start = start, end = end)
+#auto_data_filtered <- lapply(auto_data, select_period, start = start, end = end)
+
+selection <- select_period(auto_data[["NIFTY50"]],start,end)
+
+group_by_day <- function(df){
+  df <- df %>%
+    group_by(Date) %>%
+    summarise(
+      open = first(open, na.rm = T),
+      high = max(high, na.rm = T),
+      low = min(low, na.rm = T),
+      close = last(close, na.rm = T),
+      volume = sum(volume, na.rm = T),
+      .groups = 'drop'
+    )
+}
+
+nifty50 <- group_by_day(selection)
 
 # function to manipulate data and compute variables of interest
 make_x <- function(df){
@@ -61,27 +80,16 @@ make_x <- function(df){
   # df <- df %>%
   #  (minute(timestamp) %% minute == 0)
   
-  #df <- df %>%
-  #  group_by(Date) %>%
-  #  summarise(
-  #    open = first(open),
-  #    high = max(high),
-  #    low = min(low),
-  #    close = last(close),
-  #    volume = sum(volume),
-  #    .groups = 'drop'
-  #  )
-  
   # dummy for time/period
-  df <- df %>%
-    mutate(NewDay = factor(ifelse(Time == "09:15:00", 1, 0))) %>%       # add dummy for new day
-    mutate(opening = factor(ifelse(Time >= "09:15:00" & Time <= "10:30:00" , 1, 0))) %>% # add dummy for opening market hours
-    mutate(middle = factor(ifelse(Time > "10:30:00" & Time <= "14:15:00" , 1, 0))) %>% # add dummy for middle market hours
-    mutate(closing = factor(ifelse(Time > "14:15:00" & Time <= "15:30:00" , 1, 0)))# add dummy for closing market hours
+  #df <- df %>%
+   # mutate(NewDay = factor(ifelse(Time == "09:15:00", 1, 0))) %>%       # add dummy for new day
+    #mutate(opening = factor(ifelse(Time >= "09:15:00" & Time <= "10:30:00" , 1, 0))) %>% # add dummy for opening market hours
+    #mutate(middle = factor(ifelse(Time > "10:30:00" & Time <= "14:15:00" , 1, 0))) %>% # add dummy for middle market hours
+    #mutate(closing = factor(ifelse(Time > "14:15:00" & Time <= "15:30:00" , 1, 0)))# add dummy for closing market hours
   
   # collapse all period dummy in one
-  df <- df %>%
-    mutate(opening_middle_closing = factor(ifelse(df$Time >= "09:15:00" & df$Time <= "10:30:00" , 1, ifelse(df$Time > "10:30:00" & df$Time <= "14:15:00" , 2, 3))))
+  #df <- df %>%
+  #  mutate(opening_middle_closing = factor(ifelse(df$Time >= "09:15:00" & df$Time <= "10:30:00" , 1, ifelse(df$Time > "10:30:00" & df$Time <= "14:15:00" , 2, 3))))
   
   # returns
   df <- df %>%
@@ -99,13 +107,18 @@ make_x <- function(df){
     mutate(ema = EMA(lag(close), 10)) %>%                   # compute exponential moving average 10min
     mutate(macd_line = MACD(lag(close))[,1], macd_signal =  MACD(lag(close))[,2]) %>%  # compute moving average convergence divergence
     mutate(sar = SAR(cbind(
-      high = lag(high),
-      low = lag(low)))[,1]) # compute stop and reverse
+     high = lag(high),
+     low = lag(low)))[,1])%>% # compute stop and reverse
+    mutate(macd = factor(ifelse(macd_line>macd_signal,1,0))) #
   
   # momentum indicators
   df <- df %>% 
     mutate(rsi = RSI(lag(close))) %>% # compute relative strength index 
     mutate(williams = WPR(cbind(
+      high = lag(high),
+      low = lag(low),
+      close = lag(close))))%>% # compute relative strength index 
+    mutate(stoch = ST(cbind(
       high = lag(high),
       low = lag(low),
       close = lag(close)))) # compute William's %R
@@ -116,7 +129,8 @@ make_x <- function(df){
     mutate(oversold = factor(ifelse(rsi < 30, 1, 0))) # add dummy for oversold
   
   # collapse overbought or oversold
-  
+  df <- df %>%
+    mutate(over_bought_sold = factor(ifelse(rsi > 70, 1, ifelse(rsi < 30, 2, 3))))
   
   # volatility indicators
   df <- df %>% 
@@ -137,39 +151,44 @@ make_x <- function(df){
 }
 
 # apply computation of X
-data <- lapply(auto_data_filtered, make_x)
+data <- make_x(nifty50)
 
 # choose a data frame to use
-df <- data[["MARUTI"]]
-df <- select_period(df, "2018-01-01","2018-06-01")  # restricted period
+df <- data
+df <- df %>% dplyr::select(-c("obv","vwap","cmf"))
 df <- na.omit(df) # remove NA
 
 # plot values of log return to predict
-y <- df$log_return_1
+y <- df$close
 y_ts <- ts(y)
 ts.plot(y_ts)
 
-# remove outliers
-q1 <- summary(y)[["1st Qu."]]
-q3 <- summary(y)[["3rd Qu."]]
-df <- df %>%
-  filter(log_return_1 >= q1 & log_return_1 <= q3 ) %>%
-  filter(Date != "2018-02-06") # crash
 
 # fit model
-model <- lm(log_return_1 ~ oversold + overbought, data = df)
+model <- lm(log(close) ~ ema+rsi+williams+atr, data = df)
 summary(model)
+shapiro.test(model$residuals)
+par(mfrow=c(2,2))
+plot(model)
+par(mfrow=c(1,1))
+df <- df[-c(155,305,389),]
+model <- lm(log(close) ~ ema+rsi+williams+atr, data = df)
+summary(model)
+shapiro.test(model$residuals)
+par(mfrow=c(2,2))
+plot(model)
+par(mfrow=c(1,1))
+df <- df[-c(154,158,387),]
+model <- lm(log(close) ~ williams+ema+rsi, data = df)
+summary(model)
+shapiro.test(model$residuals)
 par(mfrow=c(2,2))
 plot(model)
 par(mfrow=c(1,1))
 
-hist(model$rank)
-
-
-
-
-
-
-
-
-
+# prediction / overfitting
+library(caret)
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 5)
+cv_model <- train(log(close) ~ williams+ema+rsi, data = df, method = "lm", trControl = train_control)
+print(cv_model)
