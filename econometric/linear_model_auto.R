@@ -12,6 +12,9 @@ library(xts)
 library(IDPmisc)
 library(DescTools)
 library(MASS)
+library(lmtest)
+library(skedastic)
+library(sandwich)
 
 # load image with the lists of dataframes
 load("lists_of_datasets.RData")
@@ -36,7 +39,7 @@ name <- names(auto_data)
 # BAJAJA vs EICHERMOT vs HEROMOTOCO
 
 # select only 2018
-start <- "2018-01-01"
+start <- "2017-01-01"
 end <- "2020-01-01"
 select_period <- function(df, start, end){
   
@@ -117,12 +120,8 @@ make_x <- function(df){
     mutate(williams = WPR(cbind(
       high = lag(high),
       low = lag(low),
-      close = lag(close))))%>% # compute relative strength index 
-    mutate(stoch = ST(cbind(
-      high = lag(high),
-      low = lag(low),
       close = lag(close)))) # compute William's %R
-  
+   
   # dummy for overbought (>70) or oversold (<30)
   df <- df %>%
     mutate(overbought = factor(ifelse(rsi > 70, 1, 0))) %>%       # add dummy for overbouught
@@ -165,30 +164,71 @@ ts.plot(y_ts)
 
 
 # fit model
-model <- lm(log(close) ~ ema+rsi+williams+atr, data = df)
+model <- lm(log(close) ~ ema+williams, data = df)
 summary(model)
 shapiro.test(model$residuals)
 par(mfrow=c(2,2))
 plot(model)
 par(mfrow=c(1,1))
-df <- df[-c(155,305,389),]
-model <- lm(log(close) ~ ema+rsi+williams+atr, data = df)
+df <- df[-c(402,636,637,638),]#df <- df[-c(155,305,389),]
+model <- lm(log(close) ~ ema+williams, data = df)
 summary(model)
 shapiro.test(model$residuals)
 par(mfrow=c(2,2))
 plot(model)
 par(mfrow=c(1,1))
-df <- df[-c(154,158,387),]
-model <- lm(log(close) ~ williams+ema+rsi, data = df)
+df <- df[-c(551),] #df <- df[-c(154,158,387),] (401,403,
+model <- lm(log(close) ~ williams+ema, data = df)
 summary(model)
 shapiro.test(model$residuals)
+bptest(model)
+white(model)
 par(mfrow=c(2,2))
 plot(model)
 par(mfrow=c(1,1))
+robust <- vcovHC(model, type = "HC1")
+coeftest(model, vcov = robust)
+
+library(nlme)
+
+model_gls <- gls(log(close) ~ williams+ema, data = df,
+                 weights = varExp(form = ~ fitted(.) ))
+summary(model_gls)
+res <- resid(model)
+fit <- fitted(model)
+var_model <- lm(I(res^2) ~ poly(fit, 2))  # quadratic fit
+pred_var <- predict(var_model)
+weights <- 1 / pred_var  # WLS weights are inverse of variance
+model <- lm(log(close) ~ williams+ema, data = df, weights = weights)
+summary(model_wls)
+
+library(splines)
+
+# 1. Fit initial model
+model_ols <- lm(log(close) ~ williams+ema, data = df)
+
+# 2. Estimate squared residuals
+res_sq <- resid(model_ols)^2
+fit <- fitted(model_ols)
+
+# 3. Model variance with a natural spline
+var_model <- lm(res_sq ~ ns(fit, df = 4))  # df can be 3–6
+pred_var <- predict(var_model)
+
+# 4. Avoid issues with 0/negative variance
+pred_var[pred_var < 1e-6] <- 1e-6
+weights <- 1 / pred_var
+
+# 5. Fit WLS
+model_wls <- lm(log(close) ~ williams+ema, data = df, weights = weights)
+
+# 6. Plot residuals again
+plot(fitted(model_wls), resid(model_wls), main = "WLS Residuals vs Fitted")
+bptest(model_wls)
 
 # prediction / overfitting
 library(caret)
 set.seed(123)
 train_control <- trainControl(method = "cv", number = 5)
-cv_model <- train(log(close) ~ williams+ema+rsi, data = df, method = "lm", trControl = train_control)
+cv_model <- train(log(close) ~ williams+ema, data = df, method = "lm", trControl = train_control)
 print(cv_model)
