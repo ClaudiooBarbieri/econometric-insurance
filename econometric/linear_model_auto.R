@@ -157,12 +157,6 @@ df <- data
 df <- df %>% dplyr::select(-c("obv","vwap","cmf"))
 df <- na.omit(df) # remove NA
 
-# plot values of log return to predict
-y <- df$close
-y_ts <- ts(y)
-ts.plot(y_ts)
-
-
 # fit model
 model <- lm(log(close) ~ ema+williams, data = df)
 summary(model)
@@ -183,6 +177,9 @@ summary(model)
 shapiro.test(model$residuals)
 bptest(model)
 white(model)
+dwtest(model)
+acf(model$residuals)
+pacf(model$residuals)
 par(mfrow=c(2,2))
 plot(model)
 par(mfrow=c(1,1))
@@ -232,3 +229,10 @@ set.seed(123)
 train_control <- trainControl(method = "cv", number = 5)
 cv_model <- train(log(close) ~ williams+ema, data = df, method = "lm", trControl = train_control)
 print(cv_model)
+
+
+
+
+
+
+
