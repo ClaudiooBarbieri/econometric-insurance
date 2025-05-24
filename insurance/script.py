@@ -196,14 +196,14 @@ def BEL_func(F, T, B, lt, qx, lapse_inflation, expenses_inflation, RD, COMM, tit
         Tot_l[ii] = Death[ii] +  Lapse[ii] + Exp[ii] + Comm[ii]
 
     # end of contract
-    Tot_l[-1] = alpha[50]*fund_at_t[-1]
-    
+    Tot_l[-1] += alpha[50]*fund_at_t[-1]*gamma[49]
+
     # computing BEL components and total BEL
     BEL_D = np.sum(Death * B)
     BEL_L = np.sum(Lapse * B)
     BEL_Exp = np.sum(Exp * B)
     BEL_Comm = np.sum(Comm * B)
-    BEL_End = B[49]*alpha[50]*fund_at_t[-1]
+    BEL_End = B[49]*alpha[50]*fund_at_t[-1]*gamma[49]
 
     # Total BEL
     Liabilities = BEL_D + BEL_L + BEL_Exp + BEL_Comm + BEL_End
@@ -371,6 +371,22 @@ Liabilities, BEL_D, BEL_L, BEL_Exp, BEL_Comm, BEL_End, duration = BEL_func( F, T
 # Basic Own Funds (BOF) in the base case
 BOF = F[:, 0].mean() - Liabilities  # F0 is mean of initial fund values
 
+labels = 'Lapse', 'Death', 'End', 'Expenses', 'Commision'
+sizes = [BEL_L, BEL_D, BEL_End, BEL_Exp, BEL_Comm]
+
+fig, ax = plt.subplots()
+ax.pie(sizes, labels=labels, autopct='%1.1f%%',
+       labeldistance=1.1,      # Push labels further out
+       pctdistance=0.6)        # Position % text closer to center
+plt.show()
+
+
+# %%
+fig, ax = plt.subplots()
+ax.barh(labels, sizes)
+ax.set_xlabel('Value')
+plt.tight_layout()
+plt.show()
 
 # %% [markdown]
 # # Interest Rates Shocks
