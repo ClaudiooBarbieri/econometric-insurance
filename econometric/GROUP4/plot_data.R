@@ -44,3 +44,15 @@ ggplot(df_plot, aes(x = time_index, y = close)) +
        y = "Close Price") +
   theme_minimal()
 
+# define general function to plot time series, as series of point
+plott <- function(df, xx, yy) {
+  
+  ggplot(df, aes(x = !!sym(xx), y = !!sym(yy))) +
+    geom_line(color = "blue", size = 1) +
+    geom_point(color = "red", size = 2) +
+    labs(title = paste("Time Series Plot: ", yy),
+         x = xx,
+         y = yy) +
+    theme_minimal()
+}
+
