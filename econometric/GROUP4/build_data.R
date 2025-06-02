@@ -65,5 +65,17 @@ nifty50 <- select_period(nifty50, "2017-01-01", "2020-01-01")
 # save as csv
 write.csv(nifty50, file= "Nifty50.csv")
 
+# aggregate at daily level to reduce data noise
+nifty_daily <- nifty50 %>%
+  group_by(Date) %>%
+  summarise(
+    open = first(open, na_rm = T),
+    high = max(high, na_rm = T),
+    low = min(low, na_rm = T),
+    close = last(close, na_rm = T),
+    volume = sum(volume, na_rm = T),
+    .groups = 'drop'
+  )
 
-
+# save as csv
+write.csv(nifty_daily, file= "Nifty50_daily.csv")

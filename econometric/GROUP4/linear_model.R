@@ -16,22 +16,10 @@ library(lmtest)
 library(skedastic)
 library(sandwich)
 library(tidyr)
+library(olsrr)
 
-# file with info
-nifty <- read.csv("Nifty50.csv")
-
-# aggregate at daily level to reduce data noise
-nifty_daily <- nifty %>%
-  group_by(Date) %>%
-  summarise(
-    open = first(open, na.rm = T),
-    high = max(high, na.rm = T),
-    low = min(low, na.rm = T),
-    close = last(close, na.rm = T),
-    volume = sum(volume, na.rm = T),
-    .groups = 'drop'
-  )
-
+# files with info
+nifty_daily <- read.csv("Nifty50_daily.csv")
 
 # function to computed the lagged technical indicators
 technical_indicators <- function(df){
@@ -52,11 +40,11 @@ technical_indicators <- function(df){
   
   df_ohlc <- df_ohlcv %>%
     dplyr::select(Open, High, Low, Close)
+  
   df_hlc <- df_ohlc %>%
     dplyr::select(High, Low, Close)
-  
   # compute indicators
-  df_tech <- df_hlc %>%
+  df_tech <- df_ohlcv %>%
     mutate(macd = MACD(df_hlc$Close)[,1]) %>%
     mutate(rsi = RSI(df_hlc$Close)) %>%
     mutate(ulti = ultimateOscillator(df_hlc)) %>%
@@ -68,40 +56,40 @@ technical_indicators <- function(df){
     mutate(obv = OBV(df_hlc$Close, df_ohlcv$Volume)) %>%
     mutate(wr = WPR(df_hlc)) %>%
     mutate(across(everything(), unname)) %>%
-    dplyr::select(-High, -Low) %>%
     `attr<-`("na.action", NULL)
  
 }
 
-# construct a dataset for supervised problem of predicting 1,3,5,7 day ahead price
-lagged_technical_indicators_daily <- technical_indicators(nifty_daily)
+# construct a dataset with the technical indicator
+lagged_technical_indicators_nifty <- technical_indicators(nifty_daily)
+
+# save for future possible uses
+write.csv(lagged_technical_indicators_nifty, file= "nifty_lagged_indicator.csv")
+
+# data for the supervised problem of predicting 1,3,5,7 day ahead price
 target <- nifty_daily[-1,]$close
-lagged_technical_indicators_daily$target1 <- target
-lagged_technical_indicators_daily$target3 <- lead(target, 2)
-lagged_technical_indicators_daily$target5 <- lead(target, 4)
-lagged_technical_indicators_daily$target7 <- lead(target, 6)
-lagged_technical_indicators_daily <- na.omit(lagged_technical_indicators_daily)
+lagged_technical_indicators_nifty$target1 <- target
+lagged_technical_indicators_nifty$target3 <- lead(target, 2)
+lagged_technical_indicators_nifty$target5 <- lead(target, 4)
+lagged_technical_indicators_nifty$target7 <- lead(target, 6)
+lagged_technical_indicators_nifty <- na.omit(lagged_technical_indicators_nifty)
 
 # split in train and test set 2/3 - 1/3
-train <- lagged_technical_indicators_daily[1:468,]
-test <- lagged_technical_indicators_daily[469:702,]
+nobs <- nrow(lagged_technical_indicators_nifty)
+stop <- floor(2*nobs/3)
+train <- lagged_technical_indicators_nifty[1:stop,]
+test <- lagged_technical_indicators_nifty[(stop+1):nobs,]
 
 # model training 1-step
 model1 <- lm(target1 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + macd + rsi + ulti + roc + dema + atr + cci + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + macd + rsi + ulti + dema + atr + cci + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + macd + rsi + ulti + dema + atr + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + macd + ulti + dema + atr + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + macd + ulti + atr + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + ulti + atr + obv + wr, data = train)
-summary(model1)
-model1 <- lm(target1 ~ -1 + Close + ulti + obv + wr, data = train)
+model1_fw <- ols_step_forward_p(model1)
+model1_bw <- ols_step_backward_p(model1)
+# Compare AIC and assign the better model
+if (min(model1_fw$metrics$aic) < min(model1_bw$metrics$aic)) {
+  model1 <- model1_fw$model
+} else {
+  model1 <- model1_bw$model
+}
 summary(model1)
 par(mfrow=c(2,2))
 plot(model1)
@@ -143,14 +131,14 @@ print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
 # model training 3-step
 model3 <- lm(target3 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model3)
-model3 <- lm(target3 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + obv + wr, data = train)
-summary(model3)
-model3 <- lm(target3 ~ -1 + Close + macd + rsi + ulti + roc + dema + atr + obv + wr, data = train)
-summary(model3)
-model3 <- lm(target3 ~ -1 + Close + macd + rsi + ulti + roc + dema + atr + wr, data = train)
-summary(model3)
-model3 <- lm(target3 ~ -1 + Close + macd + rsi + ulti + roc + dema + atr, data = train)
+model3_fw <- ols_step_forward_p(model3)
+model3_bw <- ols_step_backward_p(model3)
+# Compare AIC and assign the better model
+if (min(model3_fw$metrics$aic) < min(model3_bw$metrics$aic)) {
+  model3 <- model3_fw$model
+} else {
+  model3 <- model3_bw$model
+}
 summary(model3)
 par(mfrow=c(2,2))
 plot(model3)
@@ -192,16 +180,14 @@ print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
 # model training 5-step
 model5 <- lm(target5 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model5)
-model5 <- lm(target5 ~ -1 + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model5)
-model5 <- lm(target5 ~ -1 + macd + rsi + ulti + volatility + roc + dema + atr + obv + wr, data = train)
-summary(model5)
-model5 <- lm(target5 ~ -1 + macd + rsi + ulti + volatility + roc + dema + atr + obv, data = train)
-summary(model5)
-model5 <- lm(target5 ~ -1 + macd + rsi + volatility + roc + dema + atr + obv, data = train)
-summary(model5)
-model5 <- lm(target5 ~ -1 + macd + rsi + roc + dema + atr + obv, data = train)
+model5_fw <- ols_step_forward_p(model5)
+model5_bw <- ols_step_backward_p(model5)
+# Compare AIC and assign the better model
+if (min(model5_fw$metrics$aic) < min(model5_bw$metrics$aic)) {
+  model5 <- model5_fw$model
+} else {
+  model5 <- model5_bw$model
+}
 summary(model5)
 par(mfrow=c(2,2))
 plot(model5)
@@ -243,12 +229,14 @@ print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
 # model training 7-step
 model7 <- lm(target7 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model7)
-model7 <- lm(target7 ~ -1 + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
-summary(model7)
-model7 <- lm(target7 ~ -1 + macd + ulti + volatility + roc + dema + atr + +cci + obv + wr, data = train)
-summary(model7)
-model7 <- lm(target7 ~ -1 + macd + volatility + roc + dema + atr + cci + obv, data = train)
+model7_fw <- ols_step_forward_p(model7)
+model7_bw <- ols_step_backward_p(model7)
+# Compare AIC and assign the better model
+if (min(model7_fw$metrics$aic) < min(model7_bw$metrics$aic)) {
+  model7 <- model7_fw$model
+} else {
+  model7 <- model7_bw$model
+}
 summary(model7)
 par(mfrow=c(2,2))
 plot(model7)
@@ -287,3 +275,4 @@ directional_accuracy <- mean(direction_correct[true_changes != 0], na.rm = TRUE)
 
 print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
 print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
+
