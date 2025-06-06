@@ -75,10 +75,15 @@ lagged_technical_indicators_nifty$target7 <- lead(target, 6)
 lagged_technical_indicators_nifty <- na.omit(lagged_technical_indicators_nifty)
 
 # split in train and test set 2/3 - 1/3
+# nobs <- nrow(lagged_technical_indicators_nifty)
+# stop <- floor(2*nobs/3)
+# train <- lagged_technical_indicators_nifty[1:stop,]
+# test <- lagged_technical_indicators_nifty[(stop+1):nobs,]
+
 nobs <- nrow(lagged_technical_indicators_nifty)
-stop <- floor(2*nobs/3)
-train <- lagged_technical_indicators_nifty[1:stop,]
-test <- lagged_technical_indicators_nifty[(stop+1):nobs,]
+first2019 <- which(format(as.Date(lagged_technical_indicators_nifty$Date), "%Y") == 2019)[1]
+train <- lagged_technical_indicators_nifty[1:(first2019-1),]
+test <- lagged_technical_indicators_nifty[first2019:nobs,]
 
 # model training 1-step
 model1 <- lm(target1 ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
