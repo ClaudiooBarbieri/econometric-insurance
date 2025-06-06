@@ -17,6 +17,8 @@ library(skedastic)
 library(sandwich)
 library(tidyr)
 library(olsrr)
+library(moments)
+library(tsoutliers)
 
 # files with info
 nifty_daily <- read.csv("Nifty50_daily.csv")
@@ -101,9 +103,12 @@ plot(model1)
 par(mfrow=c(1,1))
 dwtest(model1)
 bptest(model1)
-acf(model1$residuals)
-pacf(model1$residuals)
+par(mfrow=c(1,2))
+acf(model1$residuals, main = "ACF")
+pacf(model1$residuals, main = "PACF")
+par(mfrow=c(1,1))
 shapiro.test(model1$residuals)
+jarque.test(model1$residuals)
 
 par(mfrow=c(3,1))
 plot(ts(train$target1))
@@ -112,13 +117,20 @@ plot(ts(model1$residuals), col = 'red')
 abline(h=0)
 par(mfrow=c(1,1))
 
+
 plot(ts(train$target1))
 lines(ts(model1$fitted.values), col = 'blue')
 
 prediction1 <- predict(model1, test)
 
-plot(ts(test$target1))
+plot(ts(test$target1), xlab = "Day", ylab = "Price")
 lines(ts(prediction1), col = 'blue')
+
+legend("topleft",                   
+       legend = c("Actual", "Predicted"),  
+       col = c("black", "blue"),           
+       lty = 1,                            
+       cex = 0.8)                          
 
 true_prices <- test$target1
 predicted_prices <- prediction1
@@ -150,9 +162,12 @@ plot(model3)
 par(mfrow=c(1,1))
 dwtest(model3)
 bptest(model3)
-acf(model3$residuals)
-pacf(model3$residuals)
+par(mfrow=c(1,2))
+acf(model3$residuals, main = "ACF")
+pacf(model3$residuals, main = "PACF")
+par(mfrow=c(1,1))
 shapiro.test(model3$residuals)
+jarque.test(model1$residuals)
 
 par(mfrow=c(3,1))
 plot(ts(train$target3))
@@ -166,8 +181,14 @@ lines(ts(model3$fitted.values), col = 'blue')
 
 prediction3 <- predict(model3, test)
 
-plot(ts(test$target3))
+plot(ts(test$target3), xlab = "Day", ylab = "Price")
 lines(ts(prediction3), col = 'blue')
+
+legend("topleft",                   
+       legend = c("Actual", "Predicted"),  
+       col = c("black", "blue"),           
+       lty = 1,                            
+       cex = 0.8)   
 
 true_prices <- test$target3
 predicted_prices <- prediction3
@@ -199,9 +220,12 @@ plot(model5)
 par(mfrow=c(1,1))
 dwtest(model5)
 bptest(model5)
-acf(model5$residuals)
-pacf(model5$residuals)
+par(mfrow=c(1,2))
+acf(model5$residuals, main = "ACF")
+pacf(model5$residuals, main = "PACF")
+par(mfrow=c(1,1))
 shapiro.test(model5$residuals)
+jarque.test(model5$residuals)
 
 par(mfrow=c(3,1))
 plot(ts(train$target5))
@@ -215,8 +239,14 @@ lines(ts(model5$fitted.values), col = 'blue')
 
 prediction5 <- predict(model5, test)
 
-plot(ts(test$target5))
+plot(ts(test$target5), xlab = "Day", ylab = "Price")
 lines(ts(prediction5), col = 'blue')
+
+legend("topleft",                   
+       legend = c("Actual", "Predicted"),  
+       col = c("black", "blue"),           
+       lty = 1,                            
+       cex = 0.8)   
 
 true_prices <- test$target5
 predicted_prices <- prediction5
@@ -248,9 +278,12 @@ plot(model7)
 par(mfrow=c(1,1))
 dwtest(model7)
 bptest(model7)
-acf(model7$residuals)
-pacf(model7$residuals)
+par(mfrow=c(1,2))
+acf(model7$residuals, main = "ACF")
+pacf(model7$residuals, main = "PACF")
+par(mfrow=c(1,1))
 shapiro.test(model7$residuals)
+jarque.test(model7$residuals)
 
 par(mfrow=c(3,1))
 plot(ts(train$target7))
@@ -264,8 +297,14 @@ lines(ts(model7$fitted.values), col = 'blue')
 
 prediction7 <- predict(model7, test)
 
-plot(ts(test$target7))
+plot(ts(test$target7), xlab = "Day", ylab = "Price")
 lines(ts(prediction7), col = 'blue')
+
+legend("topleft",                   
+       legend = c("Actual", "Predicted"),  
+       col = c("black", "blue"),           
+       lty = 1,                            
+       cex = 0.8)   
 
 true_prices <- test$target7
 predicted_prices <- prediction7
