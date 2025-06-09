@@ -65,6 +65,9 @@ nifty50 <- select_period(nifty50, "2017-01-01", "2020-01-01")
 # save as csv
 write.csv(nifty50, file= "Nifty50.csv")
 
+nifty50 <- nifty50 %>%
+  select(-NewDay, everything())
+
 # aggregate at daily level to reduce data noise
 nifty_daily <- nifty50 %>%
   group_by(Date) %>%
@@ -79,3 +82,4 @@ nifty_daily <- nifty50 %>%
 
 # save as csv
 write.csv(nifty_daily, file= "Nifty50_daily.csv")
+
