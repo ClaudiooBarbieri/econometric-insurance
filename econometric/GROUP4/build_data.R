@@ -73,8 +73,8 @@ nifty_daily <- nifty50 %>%
   group_by(Date) %>%
   summarise(
     open = first(open, na_rm = T),
-    high = max(high, na_rm = T),
-    low = min(low, na_rm = T),
+    high = max(high, na.rm = T),
+    low = min(low, na.rm = T),
     close = last(close, na_rm = T),
     volume = sum(volume, na_rm = T),
     .groups = 'drop'
