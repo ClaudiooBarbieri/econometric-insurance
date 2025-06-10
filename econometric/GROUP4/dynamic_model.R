@@ -106,25 +106,44 @@ acf(y$y4, main = "ACF")
 pacf(y$y4, main = "PACF")
 par(mfrow=c(1,1))
 
-# add differenced values for y1 showing non stationarity
-
-ydiff <- y %>%
-  mutate(y1 = y1 - lag(y1)) %>%
-  na.omit()
-
 # VAR on it, windows q, m ahead
 q <- 90
-m <- 1
-n <- nrow(ydiff)
-predictions <- data.frame(
-  open = numeric(n - q - m + 1),
-  high = numeric(n - q - m + 1),
-  low = numeric(n - q - m + 1),
-  close = numeric(n - q - m + 1)
-)
+m <- 3
+n <- nrow(y)
+all_true <- list()
+all_pred <- list()
+if(m == 1){
+  predictions <- data.frame(
+    open = numeric(n - q - m + 1),
+    high = numeric(n - q - m + 1),
+    low = numeric(n - q - m + 1),
+    close = numeric(n - q - m + 1)
+  )
+} else {
+  predictions_multi <- vector("list", length = n - q - m + 1)
+}
 
 for (i in seq(q, nrow(y) - m)) {
-  y_train <- ydiff[(i - q + 1):i, , drop = FALSE]
+  y_train <- y[(i - q + 1):i, , drop = FALSE]
+  
+  # Apply ADF test to each column and stop if p-value > 0.05
+  cols_to_difference <- c()
+  for (colname in colnames(y_train)) {
+    pval <- adf.test(y_train[[colname]])$p.value
+    if (pval > 0.05) {
+      warning(paste("ADF test failed: variable", colname, 
+                 "is non-stationary at iteration", i, 
+                 "with p-value =", round(pval, 4)))
+      cols_to_difference <- c(cols_to_difference, colname)
+    }
+  }
+  
+  # differenciate when needed
+  if (length(cols_to_difference) > 0) {
+    y_train <- y_train %>%
+      mutate(across(all_of(cols_to_difference), ~ . - lag(.))) %>%
+      na.omit()
+  }
   
   # Step 1: Select optimal lag
   lag_selection <- VARselect(y_train, lag.max = 10, type = "const")
@@ -133,14 +152,45 @@ for (i in seq(q, nrow(y) - m)) {
   var_model <- VAR(y_train, p = p, type = "const")
   forecast <- predict(var_model, n.ahead = m)
   
-  X_pred <- backtransform(y$y1[i] + forecast$fcst$y1[,"fcst"], forecast$fcst$y2[,"fcst"], forecast$fcst$y3[,"fcst"], forecast$fcst$y4[,"fcst"])
-    
-  predictions[i-q+1, "open"] <- X_pred$open
-  predictions[i-q+1, "high"] <- X_pred$high
-  predictions[i-q+1, "low"] <- X_pred$low
-  predictions[i-q+1, "close"] <- X_pred$close
+  # Initialize a data frame to hold transformed forecasts
+  forecast_df <- data.frame(matrix(NA, nrow = m, ncol = ncol(y)))
+  colnames(forecast_df) <- colnames(y)
+  
+  for (col in colnames(y)) {
+    if (col %in% cols_to_difference) {
+      # Apply inverse differencing
+      forecast_df[[col]] <- cumsum(forecast$fcst[[col]][,"fcst"]) + y[[col]][i]
+    } else {
+      # No differencing applied — keep forecast as-is
+      forecast_df[[col]] <- forecast$fcst[[col]][,"fcst"]
+    }
+  }
+  
+  X_pred <- backtransform(forecast_df$y1, forecast_df$y2, forecast_df$y3, forecast_df$y4)
+  
+  if(m == 1){
+    predictions[i-q+1, "open"] <- X_pred$open
+    predictions[i-q+1, "high"] <- X_pred$high
+    predictions[i-q+1, "low"] <- X_pred$low
+    predictions[i-q+1, "close"] <- X_pred$close
+  } else {
+    predictions_multi[[i - q + 1]] <- X_pred
+  }
+  
+  # Store predictions and true values
+  all_true[[length(all_true) + 1]] <- nifty[(i + 1):(i + m), ] %>%
+    dplyr::select(open, high, low, close)
+  all_pred[[length(all_pred) + 1]] <- X_pred
 }
 
+true_df <- do.call(rbind, all_true)
+pred_df <- do.call(rbind, all_pred)
+print(paste("RMSE  open:", RMSE(true_df$open, pred_df$open)))
+print(paste("RMSE  high:", RMSE(true_df$high, pred_df$high)))
+print(paste("RMSE  low:", RMSE(true_df$low, pred_df$low)))
+print(paste("RMSE  close:", RMSE(true_df$close, pred_df$close)))
+
+# for one step ahead can also plot
 actual <- nifty[(q+1):nrow(nifty),]
 
 par(mfrow=c(2,2))
@@ -174,58 +224,13 @@ legend("topleft",
        cex = 0.8) 
 par(mfrow=c(1,1))
 
+# compute the error
+print(paste("RMSE  open:", RMSE(actual$open, predictions$open)))
+print(paste("RMSE  high:", RMSE(actual$high, predictions$high)))
+print(paste("RMSE  low:", RMSE(actual$low, predictions$low)))
+print(paste("RMSE  close:", RMSE(actual$close, predictions$close)))
 
-
-
-
-
-
-
-
-
-
-
-
-# select q time period
-q <- 90
-yq <- y[1:q,]
-actual <- nifty[(q+1):(q+7),]
-
-
-
-# signal of non stationarity for y1 -> differenciate it
-base <- yq$y1[q]
-yq$y1 <- yq$y1 - lag(yq$y1)
-yq <- yq[-1,]
-adf.test(yq$y1)
-par(mfrow=c(1,2))
-acf(yq$y1, main = "ACF")
-pacf(yq$y1, main = "PACF")
-par(mfrow=c(1,1))
-
-# fit the VAR on the stationary time series
-varsel <- VARselect(yq, lag.max = 10, type = "none")
-k <- varsel$selection["AIC(n)"]
-var_model <- VAR(yq, p = k, type = "none")
-
-# predict differences
-prediction <- predict(var_model, n.ahead = 7)
-
-# compute back non differenced value
-yyy <- c(base, prediction$fcst$y1[,"fcst"])
-yyycumsum <- cumsum(yyy)[-1]
-
-
-
-
-
-
-
-
-
-
-
-
+# candlestick plot
 ggplot(nifty, aes(x = as.Date(Date))) +
   geom_segment(aes(y = low, yend = high, xend = as.Date(Date)), color = "black") +
   geom_rect(aes(ymin = pmin(open, close), ymax = pmax(open, close),
@@ -234,12 +239,3 @@ ggplot(nifty, aes(x = as.Date(Date))) +
   scale_fill_manual(values = c("TRUE" = "forestgreen", "FALSE" = "red")) +
   theme_minimal() +
   labs(title = "OHLC Chart", y = "Price", x = "Date")
-
-# find cointegration relationship with Johansen approach
-johansen_result <- ca.jo(yq, type = "trace", ecdet = "const", K = 4)
-summary(johansen_result)
-# if cointegration relationships exist
-cr <- 3
-vecm_model <- vec2var(johansen_result, r = cr)
-summary(vecm_model)
-# otherwise
