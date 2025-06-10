@@ -320,3 +320,97 @@ directional_accuracy <- mean(direction_correct[true_changes != 0], na.rm = TRUE)
 print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
 print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
+# what if on log returns
+target <- log(nifty_daily$close /  lag(nifty_daily$close))[-1]
+lagged_technical_indicators_nifty$return <- target
+
+nobs <- nrow(lagged_technical_indicators_nifty)
+first2019 <- which(format(as.Date(lagged_technical_indicators_nifty$Date), "%Y") == 2019)[1]
+train <- lagged_technical_indicators_nifty[1:(first2019-1),]
+test <- lagged_technical_indicators_nifty[first2019:nobs,]
+
+# model 
+model <- lm(return ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train)
+model_fw <- ols_step_forward_p(model)
+model_bw <- ols_step_backward_p(model)
+# Compare AIC and assign the better model
+if (min(model_fw$metrics$aic) < min(model_bw$metrics$aic)) {
+  model <- model_fw$model
+} else {
+  model <- model_bw$model
+}
+summary(model)
+par(mfrow=c(2,2))
+plot(model)
+par(mfrow=c(1,1))
+dwtest(model)
+bptest(model)
+par(mfrow=c(1,2))
+acf(model$residuals, main = "ACF")
+pacf(model$residuals, main = "PACF")
+par(mfrow=c(1,1))
+shapiro.test(model$residuals)
+jarque.test(model$residuals)
+
+# remove outliers
+train[c(271,435,436),]$Date
+train_wo <- train[-c(271,435,436),]
+# and repeat
+model <- lm(return ~ -1 + Close + macd + rsi + ulti + volatility + roc + dema + atr + cci + obv + wr, data = train_wo)
+model_fw <- ols_step_forward_p(model)
+model_bw <- ols_step_backward_p(model)
+# Compare AIC and assign the better model
+if (min(model_fw$metrics$aic) < min(model_bw$metrics$aic)) {
+  model <- model_fw$model
+} else {
+  model <- model_bw$model
+}
+summary(model)
+par(mfrow=c(2,2))
+plot(model)
+par(mfrow=c(1,1))
+dwtest(model)
+bptest(model)
+par(mfrow=c(1,2))
+acf(model$residuals, main = "ACF")
+pacf(model$residuals, main = "PACF")
+par(mfrow=c(1,1))
+shapiro.test(model$residuals)
+jarque.test(model$residuals)
+
+par(mfrow=c(3,1))
+plot(ts(train$return))
+plot(ts(model$fitted.values), col = 'blue')
+plot(ts(model$residuals), col = 'red')
+abline(h=0)
+par(mfrow=c(1,1))
+
+
+plot(ts(train$return))
+lines(ts(model$fitted.values), col = 'blue')
+
+prediction <- predict(model, test)
+
+plot(ts(test$return), xlab = "Day", ylab = "Price")
+lines(ts(prediction), col = 'blue')
+
+legend("topleft",                   
+       legend = c("Actual", "Predicted"),  
+       col = c("black", "blue"),           
+       lty = 1,                            
+       cex = 0.8)                          
+
+true_prices <- test$return
+predicted_prices <- prediction
+
+# Calculate directional changes
+true_changes <- sign(diff(true_prices))  # +1 for up, -1 for down, 0 for no change
+pred_changes <- sign(diff(predicted_prices))
+
+# Directional accuracy (excluding cases with no change)
+direction_correct <- true_changes == pred_changes
+directional_accuracy <- mean(direction_correct[true_changes != 0], na.rm = TRUE)
+
+print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
+print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
+
