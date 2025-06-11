@@ -19,6 +19,9 @@ library(tidyr)
 library(olsrr)
 library(moments)
 library(tsoutliers)
+library(urca)
+library(vars)
+library(tseries)
 
 # files with info
 nifty_daily <- read.csv("Nifty50_daily.csv")
@@ -323,6 +326,9 @@ print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 # what if on log returns
 target <- log(nifty_daily$close /  lag(nifty_daily$close))[-1]
 lagged_technical_indicators_nifty$return <- target
+adf.test(target)
+acf(target)
+pacf(target)
 
 nobs <- nrow(lagged_technical_indicators_nifty)
 first2019 <- which(format(as.Date(lagged_technical_indicators_nifty$Date), "%Y") == 2019)[1]
@@ -392,11 +398,11 @@ lines(ts(model$fitted.values), col = 'blue')
 prediction <- predict(model, test)
 
 plot(ts(test$return), xlab = "Day", ylab = "Price")
-lines(ts(prediction), col = 'blue')
+lines(ts(prediction), col = 'red')
 
 legend("topleft",                   
        legend = c("Actual", "Predicted"),  
-       col = c("black", "blue"),           
+       col = c("black", "red"),           
        lty = 1,                            
        cex = 0.8)                          
 
