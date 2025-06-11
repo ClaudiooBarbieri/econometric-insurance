@@ -101,14 +101,14 @@ pacf(y$y2, main = "PACF")
 adf.test(y$y3)
 acf(y$y3, main = "ACF")
 pacf(y$y3, main = "PACF")
-adf.test(yq$y4)
+adf.test(y$y4)
 acf(y$y4, main = "ACF")
 pacf(y$y4, main = "PACF")
 par(mfrow=c(1,1))
 
 # VAR on it, windows q, m ahead
 q <- 90
-m <- 3
+m <- 1
 n <- nrow(y)
 all_true <- list()
 all_pred <- list()
