@@ -112,6 +112,9 @@ m <- 1
 n <- nrow(y)
 all_true <- list()
 all_pred <- list()
+serial_pvals <- c()
+arch_pvals <- c()
+normality_pvals <- c()
 if(m == 1){
   predictions <- data.frame(
     open = numeric(n - q - m + 1),
@@ -150,6 +153,20 @@ for (i in seq(q, nrow(y) - m)) {
   p <- lag_selection$selection["AIC(n)"]
   
   var_model <- VAR(y_train, p = p, type = "const")
+  
+  # Serial correlation test
+  s_pval <- serial.test(var_model, lags.pt = 16, type = "PT.asymptotic")$serial$p.value
+  serial_pvals <- c(serial_pvals, s_pval)
+  
+  # ARCH test
+  a_pval <- arch.test(var_model, lags.multi = 5, multivariate.only = TRUE)$arch.mul$p.value
+  arch_pvals <- c(arch_pvals, a_pval)
+  
+  # Normality test
+  n_pval <- normality.test(var_model)$jb.mul$JB$p.value[1,1]
+  normality_pvals <- c(normality_pvals, n_pval)
+  
+  
   forecast <- predict(var_model, n.ahead = m)
   
   # Initialize a data frame to hold transformed forecasts
@@ -182,6 +199,10 @@ for (i in seq(q, nrow(y) - m)) {
     dplyr::select(open, high, low, close)
   all_pred[[length(all_pred) + 1]] <- X_pred
 }
+# check assumption
+print(paste("Autocorrelated residual:", sum(serial_pvals<0.05)))
+print(paste("Heteroskedastick residual:", sum(arch_pvals<0.05)))
+print(paste("NON normal residual:", sum(normality_pvals<0.05)))
 
 true_df <- do.call(rbind, all_true)
 pred_df <- do.call(rbind, all_pred)
