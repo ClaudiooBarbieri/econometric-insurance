@@ -325,6 +325,7 @@ print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
 # what if on log returns
 target <- log(nifty_daily$close /  lag(nifty_daily$close))[-1]
+lagged_technical_indicators_nifty <- technical_indicators(nifty_daily)
 lagged_technical_indicators_nifty$return <- target
 adf.test(target)
 acf(target)
