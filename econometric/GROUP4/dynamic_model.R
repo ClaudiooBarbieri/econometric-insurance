@@ -108,7 +108,7 @@ par(mfrow=c(1,1))
 
 # VAR on it, windows q, m ahead
 q <- 90
-m <- 1
+m <- 7
 n <- nrow(y)
 all_true <- list()
 all_pred <- list()
