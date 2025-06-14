@@ -277,86 +277,47 @@ strategy_metrics <- function(returns, periods_per_year = 252, risk_free_rate = 0
 }
 
 # function for comparison plotting
-plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title) {
-  # Create a data frame with generic column names
+
+plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title,
+                     ylims = c(0.7, 1.3)) {
+  
+  
   plot_df <- data.frame(
-    Time = 1:length(arr1),
+    Time    = seq_along(arr1),
     Series1 = arr1,
     Series2 = arr2
   )
-  # Rename columns to desired labels
-  colnames(plot_df)[colnames(plot_df) == "Series1"] <- label1
-  colnames(plot_df)[colnames(plot_df) == "Series2"] <- label2
-  # Reshape using the new column names
-  plot_df_long <- pivot_longer(
+  names(plot_df)[2:3] <- c(label1, label2)
+  
+  plot_long <- pivot_longer(
     plot_df,
-    cols = c(all_of(c(label1, label2))),
-    names_to = "Type",
-    values_to = "Values"
+    cols      = c(label1, label2),
+    names_to  = "Series",
+    values_to = "Value"
   )
-  # Plot
-  ggplot(plot_df_long, aes(x = Time, y = Values, color = Type)) +
-    geom_line(size = 0.5) +
+  
+  ggplot(plot_long, aes(x = Time, y = Value, color = Series)) +
+    geom_line(size = 1) +
+    scale_color_manual(
+      values = setNames(c("blue", "orange"), c(label1, label2))
+    ) +
     labs(
       title = title,
-      x = labelx,
-      y = labely,
-      color = "Legend"
+      x     = labelx,
+      y     = labely,
+      color = NULL
     ) +
-    theme_minimal()
-}
-
-
-# We evaluate the trading strategy for 2019
-eval_dates <- as.Date(nifty$Date[(q+1):nrow(nifty)])
-idx_2019 <- which(lubridate::year(eval_dates) == 2019)
-#true_ret_all <- log(true_df$close / true_df$open)
-#pred_ret_all <- log(pred_df$close / pred_df$open)
-true_ret_all <- log(true_df$close / lag(true_df$close))[-1]
-pred_ret_all <- log(pred_df$close / lag(pred_df$close))[-1]
-true_ret_2019 <- true_ret_all[idx_2019]
-pred_ret_2019 <- pred_ret_all[idx_2019]
-
-plot_fun(true_ret_2019 , "actual returns", pred_ret_2019 , "predicted returns", "time", "returns", "Pred VS True returns (close/open)")
-
-
-trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0001,
-                             type = c("close_close", "close_open")) {
-  # Calculate positions based on prediction and threshold
-  positions <- ifelse(pred_ret > threshold, 1,
-                      ifelse(pred_ret < -threshold, -1, 0))
-  
-  # Computation of costs
-  n <- length(positions)
-  costs <- numeric(n)  
-  prev_pos_nz <- positions[1:(n-1)]!= 0
-  curr_pos_nz <- positions[2:n]!= 0
-  
-  if (type == "close_close") {
-    # Consider only when change position
-    pos_change <- abs(diff(c(0, positions)))
-    costs      <- transaction_cost * pos_change
-  } else {
-    # Consider all overnight costs
-    prev_nz <- positions[1:(n-1)] != 0
-    curr_nz <- positions[2:n]   != 0
-    costs[2:n] <- transaction_cost * (as.integer(prev_nz) + as.integer(curr_nz))
-    costs[1]   <- transaction_cost * as.integer(positions[1] != 0)
-  }
-  
-  # Calculate strategy returns after costs
-  strategy_return <- (positions * true_ret) - costs
-  
-  # Calculate cumulative returns
-  cumulative_return <- cumsum(strategy_return)
-  
-  # Return data frame 
-  data.frame(
-    Position = positions,
-    Strategy_Return = strategy_return,
-    Cumulative_Return = cumulative_return,
-    Costs = costs
-  )
+    scale_x_continuous(expand = c(0,0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    coord_cartesian(ylim = ylims) +                      # <<< set Y‑axis limits
+    theme_light(base_size = 14) +
+    theme(
+      plot.title           = element_text(hjust = 0.5, face = "bold"),
+      legend.position      = c(0.02, 0.98),
+      legend.justification = c(0, 1),
+      legend.background    = element_rect(fill = alpha("white", 0.8), color = NA)
+    ) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "gray")  # baseline at 1
 }
 
 #my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_open")
@@ -387,7 +348,9 @@ cum_ret_norm <- cum_ret_exp / cum_ret_exp[1]
 # Normalize NIFTY50 close price
 close_price_norm  <- nifty$close[(q+1):nrow(nifty)][idx_2019] / nifty$close[(q+1):nrow(nifty)][idx_2019][1]
 
-plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50")
+plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50",
+         ylims = c(0.6, 1.25))
+
 
 # Convert net log‐returns to simple returns
 simple_returns <- exp(my_strategy$Strategy_Return) - 1
