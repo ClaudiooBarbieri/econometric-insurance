@@ -323,7 +323,7 @@ directional_accuracy <- mean(direction_correct[true_changes != 0], na.rm = TRUE)
 print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
 print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
-# what if on log returns
+#### what if on log returns #####
 target <- log(nifty_daily$close /  lag(nifty_daily$close))[-1]
 lagged_technical_indicators_nifty <- technical_indicators(nifty_daily)
 lagged_technical_indicators_nifty$return <- target
@@ -422,24 +422,191 @@ print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
 print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
 
-# ------------------------------------------------------------------------------
-# Trading Strategy
-true_ret <- predicted_prices
-pred_ret <- true_prices
+#### what if on log(close/open) ####
 
-trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0005) {
+# Target: log(close/open)
+return_co <- log(nifty_daily$close / nifty_daily$open)
+
+# Build features + new target
+lagged_tech_co <- technical_indicators(nifty_daily)
+lagged_tech_co$return_co <- return_co[-1]
+
+# Train/test split at start of 2019
+n_obs      <- nrow(lagged_tech_co)
+start2019 <- which(format(as.Date(lagged_tech_co$Date), "%Y") == "2019")[1]
+train_co  <- lagged_tech_co[1:(start2019 - 1), ]
+test_co   <- lagged_tech_co[start2019:n_obs, ]
+
+# Stationarity + ACF/PACF on target (OK!)
+adf.test(train_co$return_co)
+Acf(train_co$return_co, main = "ACF of return_co")
+Pacf(train_co$return_co, main = "PACF of return_co")
+
+# Fit initial model (no intercept), then stepwise
+mod_co <- lm(return_co ~ -1 +
+               Close + macd + rsi + ulti + volatility +
+               roc + dema + atr + cci + obv + wr,
+             data = train_co)
+
+fw_co <- ols_step_forward_p(mod_co)
+bw_co <- ols_step_backward_p(mod_co)
+mod_co <- if (min(fw_co$metrics$aic) < min(bw_co$metrics$aic)) fw_co$model else bw_co$model
+
+# Diagnostic tests on selected model
+summary(mod_co)
+par(mfrow = c(2, 2)); plot(mod_co); par(mfrow = c(1, 1))
+dwtest(mod_co)      # Durbin–Watson
+bptest(mod_co)      # Breusch–Pagan
+par(mfrow = c(1, 2))
+Acf(residuals(mod_co), main = "ACF Residuals")
+Pacf(residuals(mod_co), main = "PACF Residuals")
+par(mfrow = c(1, 1))
+shapiro.test(residuals(mod_co))
+JarqueTest(residuals(mod_co))  # from DescTools
+
+# OUTLIERS ?????????????????????????????????????????????????????????????????????
+
+# Residual vs fitted plots
+par(mfrow = c(3, 1))
+plot(ts(train_co$return_co),          main = "Train return_co")
+plot(ts(fitted(mod_co)), col = 'blue',main = "Fitted values")
+plot(ts(residuals(mod_co)), col = 'red', main = "Residuals")
+abline(h = 0)
+par(mfrow = c(1, 1))
+
+plot(ts(train_co$return_co), main = "Actual vs Fitted")
+lines(ts(fitted(mod_co)), col = 'blue')
+legend("topleft", legend = c("Actual", "Fitted"),
+       col = c("black", "blue"), lty = 1)
+
+# Predict on test + plot
+pred_co   <- predict(mod_co, newdata = test_co)
+actual_co <- test_co$return_co
+
+plot(ts(actual_co), xlab = "Day", ylab = "Log(C→O) Return",
+     main = "Test: Actual vs Predicted")
+lines(ts(pred_co), col = 'red')
+legend("topleft", legend = c("Actual", "Predicted"),
+       col = c("black", "red"), lty = 1)
+
+# Directional accuracy and RMSE
+true_dir_co <- sign(diff(actual_co))
+pred_dir_co <- sign(diff(pred_co))
+dir_acc_co  <- mean(true_dir_co == pred_dir_co & true_dir_co != 0, na.rm = TRUE)
+rmse_co     <- RMSE(pred_co, actual_co)
+
+cat(sprintf("Directional Accuracy (C→O): %.2f%%\n", dir_acc_co * 100))
+cat(sprintf("RMSE (C→O): %.6f\n", rmse_co))
+
+# ------------------------------------------------------------------------------
+# Trading strategy
+
+# Metrics 
+strategy_metrics <- function(returns, periods_per_year = 252, risk_free_rate = 0.0) {
+  r <- returns
+  T <- length(r)
+  
+  # Annualized Return 
+  cum_growth <- prod(1 + r)
+  ann_return <- cum_growth^(periods_per_year / T) - 1
+  
+  # Annualized Sharpe Ratio
+  excess <- r - risk_free_rate
+  sharpe <- (mean(excess) / sd(excess)) * sqrt(periods_per_year)
+  
+  # Maximum Drawdown
+  wealth_index <- cumprod(1 + r)
+  peak         <- cummax(wealth_index)
+  drawdowns    <- (peak - wealth_index) / peak
+  max_dd       <- max(drawdowns, na.rm = TRUE)
+  
+  # Sortino Ratio
+  neg_ret     <- r[r < 0]
+  downside_sd <- if (length(neg_ret) > 0) sd(neg_ret) else NA
+  sortino     <- (mean(excess) / downside_sd) * sqrt(periods_per_year)
+  
+  return(list(
+    Annualized_Return = ann_return,
+    Sharpe_Ratio      = sharpe,
+    Max_Drawdown      = max_dd,
+    Sortino_Ratio     = sortino
+  ))
+}
+
+# function for comparison plotting
+plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title) {
+  # Create a data frame with generic column names
+  plot_df <- data.frame(
+    Time = 1:length(arr1),
+    Series1 = arr1,
+    Series2 = arr2
+  )
+  # Rename columns to desired labels
+  colnames(plot_df)[colnames(plot_df) == "Series1"] <- label1
+  colnames(plot_df)[colnames(plot_df) == "Series2"] <- label2
+  # Reshape using the new column names
+  plot_df_long <- pivot_longer(
+    plot_df,
+    cols = c(all_of(c(label1, label2))),
+    names_to = "Type",
+    values_to = "Values"
+  )
+  # Plot
+  ggplot(plot_df_long, aes(x = Time, y = Values, color = Type)) +
+    geom_line(size = 0.5) +
+    labs(
+      title = title,
+      x = labelx,
+      y = labely,
+      color = "Legend"
+    ) +
+    theme_minimal()
+}
+
+# Select the predicted and test
+# log(close/open)
+# true_ret <- actual_co
+# pred_ret <- pred_co 
+
+# log(close/close)
+true_ret <- true_prices
+pred_ret <- predicted_prices
+
+
+plot_fun(true_ret , "actual returns", pred_ret , "predicted returns", "time", "returns", "Pred VS True returns (close/open)")
+
+trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0001,
+                             type = c("close_close", "close_open")) {
   # Calculate positions based on prediction and threshold
   positions <- ifelse(pred_ret > threshold, 1,
                       ifelse(pred_ret < -threshold, -1, 0))
-  # Calculate changes in positions (trade signals)
-  position_change <- c(abs(diff(c(0, positions))))
-  # Calculate transaction costs
-  costs <- transaction_cost * position_change
+  
+  # Computation of costs
+  n <- length(positions)
+  costs <- numeric(n)  
+  prev_pos_nz <- positions[1:(n-1)]!= 0
+  curr_pos_nz <- positions[2:n]!= 0
+  
+  if (type == "close_close") {
+    # Consider only when change position
+    pos_change <- abs(diff(c(0, positions)))
+    costs      <- transaction_cost * pos_change
+  } else {
+    # Consider all overnight costs
+    prev_nz <- positions[1:(n-1)] != 0
+    curr_nz <- positions[2:n]   != 0
+    costs[2:n] <- transaction_cost * (as.integer(prev_nz) + as.integer(curr_nz))
+    costs[1]   <- transaction_cost * as.integer(positions[1] != 0)
+  }
+  
   # Calculate strategy returns after costs
   strategy_return <- (positions * true_ret) - costs
+  
   # Calculate cumulative returns
   cumulative_return <- cumsum(strategy_return)
-  # Return a data frame with all results
+  
+  
+  # Return data frame 
   data.frame(
     Position = positions,
     Strategy_Return = strategy_return,
@@ -448,7 +615,8 @@ trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, thre
   )
 }
 
-my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0005)
+# my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_open")
+my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_close")
 
 # Plot Cumulative log-return
 ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)) +
@@ -467,32 +635,26 @@ ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)
 
 # Compare trading strategy vs index performance 
 # Convert cumulative log returns to cumulative returns (in percentage)
-cumulative_return_pct <- exp(my_strategy$Cumulative_Return)
+cum_ret_exp <- exp(my_strategy$Cumulative_Return)
+
 # Normalize strategy return to start at 1
-cumulative_return_norm <- cumulative_return_pct / cumulative_return_pct[1]
+cum_ret_norm <- cum_ret_exp / cum_ret_exp[1]
+
 # Normalize NIFTY50 close price
-close_price_norm <- train$close[1:length(cumulative_return_norm)] / train$close[1]
-# Create a data frame for plotting
-plot_df <- data.frame(
-  Time = 1:length(cumulative_return_norm),
-  Strategy = cumulative_return_norm,
-  NIFTY50 = close_price_norm
-)
-# Reshape to long format
-plot_df_long <- pivot_longer(
-  plot_df,
-  cols = c("Strategy", "NIFTY50"),
-  names_to = "Type",
-  values_to = "Return"
-)
-# Plot
-ggplot(plot_df_long, aes(x = Time, y = Return, color = Type)) +
-  geom_line(size = 1) +
-  labs(
-    title = "Cumulative Returns: Strategy vs NIFTY50",
-    x = "Time",
-    y = "Normalized Return",
-    color = "Legend"
-  ) +
-  theme_minimal()
+close_price_norm  <- test_co$close / test_co$close[1]
+plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50")
+
+# Convert net log‐returns to simple returns
+simple_returns <- exp(my_strategy$Strategy_Return) - 1
+
+metrics <- strategy_metrics(simple_returns,
+                            periods_per_year = 252,
+                            risk_free_rate   = 0.0)
+
+cat(sprintf("Annualized Return: %6.2f%%\n", metrics$Annualized_Return * 100))
+cat(sprintf("Sharpe Ratio:      %6.2f\n",    metrics$Sharpe_Ratio))
+cat(sprintf("Max Drawdown:      %6.2f%%\n", metrics$Max_Drawdown * 100))
+cat(sprintf("Sortino Ratio:     %6.2f\n",    metrics$Sortino_Ratio))
+
+
 

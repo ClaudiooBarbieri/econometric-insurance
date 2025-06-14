@@ -108,7 +108,7 @@ par(mfrow=c(1,1))
 
 # VAR on it, windows q, m ahead
 q <- 90
-m <- 3
+m <- 1 #3
 n <- nrow(y)
 all_true <- list()
 all_pred <- list()
@@ -244,6 +244,38 @@ ggplot(nifty, aes(x = as.Date(Date))) +
 #-------------------------------------------------------------------------------
 # Trading Strategy
 
+# Metrics 
+strategy_metrics <- function(returns, periods_per_year = 252, risk_free_rate = 0.0) {
+  r <- returns
+  T <- length(r)
+  
+  # Annualized Return 
+  cum_growth <- prod(1 + r)
+  ann_return <- cum_growth^(periods_per_year / T) - 1
+  
+  # Annualized Sharpe Ratio
+  excess <- r - risk_free_rate
+  sharpe <- (mean(excess) / sd(excess)) * sqrt(periods_per_year)
+  
+  # Maximum Drawdown
+  wealth_index <- cumprod(1 + r)
+  peak         <- cummax(wealth_index)
+  drawdowns    <- (peak - wealth_index) / peak
+  max_dd       <- max(drawdowns, na.rm = TRUE)
+  
+  # Sortino Ratio
+  neg_ret     <- r[r < 0]
+  downside_sd <- if (length(neg_ret) > 0) sd(neg_ret) else NA
+  sortino     <- (mean(excess) / downside_sd) * sqrt(periods_per_year)
+  
+  return(list(
+    Annualized_Return = ann_return,
+    Sharpe_Ratio      = sharpe,
+    Max_Drawdown      = max_dd,
+    Sortino_Ratio     = sortino
+  ))
+}
+
 # function for comparison plotting
 plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title) {
   # Create a data frame with generic column names
@@ -274,30 +306,51 @@ plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title) {
     theme_minimal()
 }
 
-# close/close
-true_ret <- log(true_df$close / lag(true_df$close))[-1]
-pred_ret <- log(pred_df$close / lag(pred_df$close))[-1]
-plot_fun(true_ret, "actual returns", pred_ret, "predicted returns", "time", "returns", "Pred VS True returns (close/close)")
 
-# close/open
-true_ret <- log(true_df$close / true_df$open)
-pred_ret <- log(pred_df$close / pred_df$open)
-plot_fun(true_ret, "actual returns", pred_ret, "predicted returns", "time", "returns", "Pred VS True returns (close/open)")
+# We evaluate the trading strategy for 2019
+eval_dates <- as.Date(nifty$Date[(q+1):nrow(nifty)])
+idx_2019 <- which(lubridate::year(eval_dates) == 2019)
+#true_ret_all <- log(true_df$close / true_df$open)
+#pred_ret_all <- log(pred_df$close / pred_df$open)
+true_ret_all <- log(true_df$close / lag(true_df$close))[-1]
+pred_ret_all <- log(pred_df$close / lag(pred_df$close))[-1]
+true_ret_2019 <- true_ret_all[idx_2019]
+pred_ret_2019 <- pred_ret_all[idx_2019]
+
+plot_fun(true_ret_2019 , "actual returns", pred_ret_2019 , "predicted returns", "time", "returns", "Pred VS True returns (close/open)")
 
 
-trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0005) {
+trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0001,
+                             type = c("close_close", "close_open")) {
   # Calculate positions based on prediction and threshold
   positions <- ifelse(pred_ret > threshold, 1,
                       ifelse(pred_ret < -threshold, -1, 0))
-  # Calculate changes in positions (trade signals)
-  position_change <- c(abs(diff(c(0, positions))))
-  # Calculate transaction costs
-  costs <- transaction_cost * position_change
+  
+  # Computation of costs
+  n <- length(positions)
+  costs <- numeric(n)  
+  prev_pos_nz <- positions[1:(n-1)]!= 0
+  curr_pos_nz <- positions[2:n]!= 0
+  
+  if (type == "close_close") {
+    # Consider only when change position
+    pos_change <- abs(diff(c(0, positions)))
+    costs      <- transaction_cost * pos_change
+  } else {
+    # Consider all overnight costs
+    prev_nz <- positions[1:(n-1)] != 0
+    curr_nz <- positions[2:n]   != 0
+    costs[2:n] <- transaction_cost * (as.integer(prev_nz) + as.integer(curr_nz))
+    costs[1]   <- transaction_cost * as.integer(positions[1] != 0)
+  }
+  
   # Calculate strategy returns after costs
   strategy_return <- (positions * true_ret) - costs
+  
   # Calculate cumulative returns
   cumulative_return <- cumsum(strategy_return)
-  # Return a data frame with all results
+  
+  # Return data frame 
   data.frame(
     Position = positions,
     Strategy_Return = strategy_return,
@@ -306,7 +359,8 @@ trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, thre
   )
 }
 
-my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0005)
+#my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_open")
+my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_close")
 
 # Plot Cumulative log-return
 ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)) +
@@ -326,10 +380,24 @@ ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)
 # Compare trading strategy vs index performance 
 # Convert cumulative log returns to cumulative returns (in percentage)
 cum_ret_exp <- exp(my_strategy$Cumulative_Return)
+
 # Normalize strategy return to start at 1
 cum_ret_norm <- cum_ret_exp / cum_ret_exp[1]
+
 # Normalize NIFTY50 close price
-close_price_norm <- true_df$close[1:length(cum_ret_norm)] / true_df$close[1]
+close_price_norm  <- nifty$close[(q+1):nrow(nifty)][idx_2019] / nifty$close[(q+1):nrow(nifty)][idx_2019][1]
 
 plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50")
+
+# Convert net log‐returns to simple returns
+simple_returns <- exp(my_strategy$Strategy_Return) - 1
+
+metrics <- strategy_metrics(simple_returns,
+                            periods_per_year = 252,
+                            risk_free_rate   = 0.0)
+
+cat(sprintf("Annualized Return: %6.2f%%\n", metrics$Annualized_Return * 100))
+cat(sprintf("Sharpe Ratio:      %6.2f\n",    metrics$Sharpe_Ratio))
+cat(sprintf("Max Drawdown:      %6.2f%%\n", metrics$Max_Drawdown * 100))
+cat(sprintf("Sortino Ratio:     %6.2f\n",    metrics$Sortino_Ratio))
 
