@@ -582,12 +582,12 @@ plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title,
 
 # Select the predicted and test
 # log(close/open)
-true_ret <- actual_co
-pred_ret <- pred_co 
+#true_ret <- actual_co
+#pred_ret <- pred_co 
 
 # log(close/close)
-#true_ret <- true_prices
-#pred_ret <- predicted_prices
+true_ret <- true_prices
+pred_ret <- predicted_prices
 
 
 plot_fun(true_ret , "actual returns", pred_ret , "predicted returns", "time", "returns", "Pred VS True returns")
@@ -632,8 +632,8 @@ trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, thre
   )
 }
 
-my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_open")
-#my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_close")
+#my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_open")
+my_strategy <- trading_strategy(pred_ret, true_ret, 0.0005, 0.0001, "close_close")
 
 # Plot Cumulative log-return
 ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)) +
@@ -660,7 +660,7 @@ cum_ret_norm <- cum_ret_exp / cum_ret_exp[1]
 # Normalize NIFTY50 close price
 close_price_norm  <- test_co$close / test_co$close[1]
 plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50",
-         ylims = c(0.6, 1.25))
+         ylims = c(0.9, 1.25))
 
 # Convert net log‐returns to simple returns
 simple_returns <- exp(my_strategy$Strategy_Return) - 1
