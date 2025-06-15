@@ -276,8 +276,8 @@ strategy_metrics <- function(returns, periods_per_year = 252, risk_free_rate = 0
   ))
 }
 
-# function for comparison plotting
 
+# function for comparison plotting
 plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title,
                      ylims = c(0.7, 1.3)) {
   
@@ -320,8 +320,63 @@ plot_fun <- function(arr1, label1, arr2, label2, labelx, labely, title,
     geom_hline(yintercept = 1, linetype = "dashed", color = "gray")  # baseline at 1
 }
 
-#my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_open")
-my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_close")
+# We evaluate the trading strategy for 2019
+eval_dates <- as.Date(nifty$Date[(q+1):nrow(nifty)])
+idx_2019 <- which(lubridate::year(eval_dates) == 2019)
+
+# log(close/open)
+true_ret_all <- log(true_df$close / true_df$open)
+pred_ret_all <- log(pred_df$close / pred_df$open)
+
+# log(close/close)
+#true_ret_all <- log(true_df$close / lag(true_df$close))[-1]
+#pred_ret_all <- log(pred_df$close / lag(pred_df$close))[-1]
+print(true_ret_all)
+true_ret_2019 <- true_ret_all[idx_2019]
+pred_ret_2019 <- pred_ret_all[idx_2019]
+
+
+trading_strategy <- function(pred_ret, true_ret, transaction_cost = 0.0005, threshold = 0.0001,
+                             type = c("close_close", "close_open")) {
+  # Calculate positions based on prediction and threshold
+  positions <- ifelse(pred_ret > threshold, 1,
+                      ifelse(pred_ret < -threshold, -1, 0))
+  
+  # Computation of costs
+  n <- length(positions)
+  costs <- numeric(n)  
+  prev_pos_nz <- positions[1:(n-1)]!= 0
+  curr_pos_nz <- positions[2:n]!= 0
+  
+  if (type == "close_close") {
+    # Consider only when change position
+    pos_change <- abs(diff(c(0, positions)))
+    costs      <- transaction_cost * pos_change
+  } else {
+    # Consider all overnight costs
+    prev_nz <- positions[1:(n-1)] != 0
+    curr_nz <- positions[2:n]   != 0
+    costs[2:n] <- transaction_cost * (as.integer(prev_nz) + as.integer(curr_nz))
+    costs[1]   <- transaction_cost * as.integer(positions[1] != 0)
+  }
+  
+  # Calculate strategy returns after costs
+  strategy_return <- (positions * true_ret) - costs
+  
+  # Calculate cumulative returns
+  cumulative_return <- cumsum(strategy_return)
+  
+  # Return data frame 
+  data.frame(
+    Position = positions,
+    Strategy_Return = strategy_return,
+    Cumulative_Return = cumulative_return,
+    Costs = costs
+  )
+}
+
+my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_open")
+#my_strategy <- trading_strategy(pred_ret_2019, true_ret_2019, 0.0005, 0.0001, "close_close")
 
 # Plot Cumulative log-return
 ggplot(my_strategy, aes(x = seq_along(Cumulative_Return), y = Cumulative_Return)) +
@@ -349,8 +404,7 @@ cum_ret_norm <- cum_ret_exp / cum_ret_exp[1]
 close_price_norm  <- nifty$close[(q+1):nrow(nifty)][idx_2019] / nifty$close[(q+1):nrow(nifty)][idx_2019][1]
 
 plot_fun(cum_ret_norm, "Strategy", close_price_norm, "NIFTY50", "time", "cumulative returns", "Cumulative Returns: Strategy VS NIFTY50",
-         ylims = c(0.6, 1.25))
-
+         ylims = c(0.9, 1.2))
 
 # Convert net log‐returns to simple returns
 simple_returns <- exp(my_strategy$Strategy_Return) - 1

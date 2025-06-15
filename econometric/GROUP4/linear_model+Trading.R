@@ -323,7 +323,7 @@ directional_accuracy <- mean(direction_correct[true_changes != 0], na.rm = TRUE)
 print(paste("Directional Accuracy:", round(directional_accuracy*100, 2), "%"))
 print(paste("RMSE:", RMSE(predicted_prices, true_prices)))
 
-#### what if on log returns #####
+############## what if on log returns (log(close(t+1)/close(t))) #################################
 target <- log(nifty_daily$close /  lag(nifty_daily$close))[-1]
 lagged_technical_indicators_nifty <- technical_indicators(nifty_daily)
 lagged_technical_indicators_nifty$return <- target
@@ -398,8 +398,9 @@ lines(ts(model$fitted.values), col = 'blue')
 
 prediction <- predict(model, test)
 
-plot(ts(test$return), xlab = "Day", ylab = "Price")
+plot(ts(test$return), xlab = "Day", ylab = "log return", main = "Test: Actual vs Predicted")
 lines(ts(prediction), col = 'red')
+
 
 legend("topleft",                   
        legend = c("Actual", "Predicted"),  
@@ -442,6 +443,10 @@ adf.test(train_co$return_co)
 Acf(train_co$return_co, main = "ACF of return_co")
 Pacf(train_co$return_co, main = "PACF of return_co")
 
+# Outliers
+# train_co[c(271,435,436),]$Date
+# train_co <- train[-c(271,435,436),]
+
 # Fit initial model (no intercept), then stepwise
 mod_co <- lm(return_co ~ -1 +
                Close + macd + rsi + ulti + volatility +
@@ -463,8 +468,6 @@ Pacf(residuals(mod_co), main = "PACF Residuals")
 par(mfrow = c(1, 1))
 shapiro.test(residuals(mod_co))
 JarqueTest(residuals(mod_co))  # from DescTools
-
-# OUTLIERS ?????????????????????????????????????????????????????????????????????
 
 # Residual vs fitted plots
 par(mfrow = c(3, 1))
