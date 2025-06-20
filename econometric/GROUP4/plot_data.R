@@ -56,3 +56,5 @@ plott <- function(df, xx, yy) {
     theme_minimal()
 }
 
+
+

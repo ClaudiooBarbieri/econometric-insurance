@@ -62,6 +62,33 @@ select_period <- function(df, start, end){
 
 nifty50 <- select_period(nifty50, "2017-01-01", "2020-01-01")
 
+# candlestick plot
+ggplot(nifty50, aes(x = as.POSIXct(Datetime))) +
+  geom_segment(aes(y = low, yend = high, xend = as.POSIXct(Datetime)), color = "black", size = 0.5) +
+  geom_rect(aes(ymin = pmin(open, close), ymax = pmax(open, close),
+                xmin = as.POSIXct(Date) - 15,  # 15 sec
+                xmax = as.POSIXct(Date) + 15,  # 15 sec
+                fill = close > open), 
+            color = "black") +  # black border to emphasize
+  scale_fill_manual(values = c("TRUE" = "forestgreen", "FALSE" = "red")) +
+  theme_minimal() +
+  labs(title = "Intraday Candlestick Chart", y = "Price", x = "Time")
+
+library(plotly)
+
+fig <- plot_ly(data = nifty50, type = "candlestick",
+               x = ~Datetime,
+               open = ~open,
+               high = ~high,
+               low = ~low,
+               close = ~close) %>%
+  layout(title = "Minute-level Candlestick Chart",
+         xaxis = list(rangeslider = list(visible = F)),
+         yaxis = list(title = "Price"))
+
+fig
+
+
 # save as csv
 write.csv(nifty50, file= "Nifty50.csv")
 

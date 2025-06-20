@@ -1,0 +1,46 @@
+\documentclass[border=5pt]{standalone}
+\usepackage{booktabs}  % or any other packages you need
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+\begin{document}
+\begin{tikzpicture}[
+    node distance=1cm, 
+    every node/.style={
+        draw, 
+        minimum height=1cm, 
+        minimum width=2.5cm,
+        align=center,
+        text width=2.3cm
+    }, 
+    labelnode/.style={
+        draw=none, 
+        minimum height=0, 
+        minimum width=0,
+        align=center
+    },
+    ->, 
+    >=Stealth
+]
+    \node (raw) {OHLC data \\ $\{\mathbf{X}_t\}$};
+    \node (transformed) [right=of raw] {Transformed time series \\ $\{\mathbf{Y}_t\}$};
+    \node (window) [right=of transformed] {$q$ days window \\ $\{\mathbf{Y}_t\}_{i}^{i+q}$};
+    \node (test) [right=of window, text width=2.8cm] {ADF test for stationarity of each \\ $\{Y_{jt}\}_{i}^{i+q}$};
+    \node (diffyes) [below=2cm of test] {Differentiate the corresponding \\ $\{\Delta Y_{jt}\}_{i}^{i+q}$};
+    \node (diffno) [right=of test, text width=1.8cm] {Fit the VAR model \\ $\{\mathbf{\tilde Y}_t\}_{i}^{i+q}$};
+    \node (back) [right=of diffno, text width=1.8cm] {Forecast next $m$ day(s) prices \\ $\{\mathbf{X}_t\}_{i+q+1}^{i+q+m}$};
+
+    % Main flow
+    \draw (raw) -- (transformed);
+    \draw (transformed) -- (window);
+    \draw (window) -- (test);
+    \draw (test) -- node[labelnode, midway, above] {Yes}  (diffno);
+    \draw (test) -- node[labelnode, midway, right=-.8cm] {No} (diffyes);
+    \draw (diffyes) -| (diffno);
+    \draw (diffno) -- (back) coordinate[pos=0.5] (branch);
+     % Arrow going down, then back, then up to 'window'
+    \draw (branch.north) -- ++(0,1cm) -| node[labelnode, midway, above] {Roll $i$ forward} (window.north);
+
+\end{tikzpicture}
+
+\end{document}
